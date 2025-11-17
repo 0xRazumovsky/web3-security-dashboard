@@ -1,0 +1,107 @@
+services:
+  api:
+    build: .
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      MONGO_URI: mongodb://mongo:27017/web3-security
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: contract-scan-requests
+      KAFKA_CLIENT_ID: web3-security-api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongo
+      - redis
+      - kafka
+    networks:
+      - app
+
+  worker:
+    build: .
+    command: node dist/worker.js
+    environment:
+      NODE_ENV: development
+      RPC_URL: ${RPC_URL:-http://host.docker.internal:8545}
+      MONGO_URI: mongodb://mongo:27017/web3-security
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC: contract-scan-requests
+      KAFKA_CLIENT_ID: web3-security-worker
+    depends_on:
+      - mongo
+      - redis
+      - kafka
+    networks:
+      - app
+
+  mongo:
+    image: mongo:latest
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app
+
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - app
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+    networks:
+      - app
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    hostname: kafka
+    container_name: kafka
+    environment:
+      KAFKA_ENABLE_KRAFT: "no"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    networks:
+      app:
+        aliases:
+          - kafka
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      BACKEND_URL: http://api:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api
+    networks:
+      - app
+
+volumes:
+  mongo_data:
+
+networks:
+  app:
+    driver: bridge

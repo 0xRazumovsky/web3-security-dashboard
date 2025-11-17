@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web3-security-config
+data:
+  PORT: "3000"
+  RPC_URL: https://mainnet.infura.io/v3/YOUR_INFURA_KEY
+  MONGO_URI: mongodb://web3-security-mongo:27017/web3-security
+  REDIS_URL: redis://web3-security-redis:6379
+  KAFKA_BROKERS: web3-security-kafka:9092
+  KAFKA_TOPIC: contract-scan-requests
+  KAFKA_CLIENT_ID: web3-security-api

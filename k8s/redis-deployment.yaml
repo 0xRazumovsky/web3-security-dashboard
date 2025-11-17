@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: web3-security-redis
+spec:
+  selector:
+    app: web3-security-redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web3-security-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web3-security-redis
+  template:
+    metadata:
+      labels:
+        app: web3-security-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379

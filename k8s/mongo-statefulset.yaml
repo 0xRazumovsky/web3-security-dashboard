@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: web3-security-mongo
+spec:
+  selector:
+    app: web3-security-mongo
+  ports:
+    - name: mongo
+      port: 27017
+      targetPort: 27017
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web3-security-mongo
+spec:
+  serviceName: web3-security-mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web3-security-mongo
+  template:
+    metadata:
+      labels:
+        app: web3-security-mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web3-security-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web3-security-worker
+  template:
+    metadata:
+      labels:
+        app: web3-security-worker
+    spec:
+      containers:
+        - name: worker
+          image: web3-security:latest
+          imagePullPolicy: IfNotPresent
+          command: ["node", "dist/worker.js"]
+          envFrom:
+            - configMapRef:
+                name: web3-security-config
+          env:
+            - name: KAFKA_CLIENT_ID
+              value: web3-security-worker

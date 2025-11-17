@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web3-security-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web3-security-api
+  template:
+    metadata:
+      labels:
+        app: web3-security-api
+    spec:
+      containers:
+        - name: api
+          image: web3-security:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: web3-security-config
+          env:
+            - name: KAFKA_CLIENT_ID
+              value: web3-security-api
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 30
