@@ -1,116 +1,269 @@
-# Web3 Security Dashboard
+# Web3 Security Platform
 
-TypeScript/Express backend that analyzes smart contract bytecode, highlights opcode-driven risks, and exposes a security dashboard backed by MongoDB, Redis, and Kafka. A worker service consumes scan jobs to perform asynchronous analysis, making it easy to queue and monitor large batches of smart contracts.
+An end‑to‑end smart‑contract security platform that ingests contract addresses, analyzes EVM bytecode, and surfaces actionable risk insights through a React dashboard. The stack combines an Express API, a Kafka‑driven worker, MongoDB/Redis persistence, and a Vite SPA so analysts can submit, track, and review contract scans in real time.
 
-## Highlights
+---
 
-- **Opcode heuristics**: Detects high-risk instructions (`DELEGATECALL`, `SELFDESTRUCT`, `CALLCODE`, etc.), ABI-admin patterns, and summarizes opcode usage.
-- **Persistence & caching**: Stores contracts and scans in MongoDB, caches bytecode/results in Redis, and exposes aggregated dashboard metrics.
-- **Async pipeline**: REST API enqueues scan jobs on Kafka, worker consumes and persists reports.
-- **Cloud ready**: Dockerfile, Compose stack (Mongo, Redis, Kafka, API, worker), and Kubernetes manifests for a full cluster deployment.
-- **Type-safe**: Endpoints validated with Zod; services instrumented with Pino logging and graceful shutdowns.
+## Table of Contents
 
-## Architecture Overview
+1. [Key Features](#key-features)
+2. [System Architecture](#system-architecture)
+3. [Tech Stack](#tech-stack)
+4. [Repo Layout](#repo-layout)
+5. [Prerequisites](#prerequisites)
+6. [Configuration](#configuration)
+7. [Running Locally](#running-locally)
+8. [Running with Docker](#running-with-docker)
+9. [Frontend Workflow](#frontend-workflow)
+10. [API Overview](#api-overview)
+11. [Testing & Quality](#testing--quality)
+12. [Troubleshooting](#troubleshooting)
+13. [Roadmap Ideas](#roadmap-ideas)
+
+---
+
+## Key Features
+
+- **Bytecode heuristics** – Detects opcode hotspots (e.g., `DELEGATECALL`, `SELFDESTRUCT`, `CALLCODE`) and surfaces ABI admin patterns and financial control functions.
+- **Async pipeline** – `POST /contracts` enqueues scans on Kafka; a worker consumes jobs, fetches bytecode/balances, runs analysis, and persists results.
+- **Historical intelligence** – MongoDB stores contracts, scans, and derived metrics, enabling the frontend to visualize previous submissions instantly.
+- **Shared caching** – Redis caches bytecode and completed scan reports to minimize RPC requests and accelerate repeated lookups.
+- **Docker-first** – Single `docker-compose.yml` spins up MongoDB, Redis, Kafka, Express API, worker, and Vite frontend, making the entire platform reproducible.
+- **Type-safe & observable** – TypeScript across services, Zod validation at the edges, structured logging, and graceful shutdown hooks.
+
+---
+
+## System Architecture
 
 ```
-┌────────┐     ┌────────────┐     ┌──────────┐
-│ Client │────▶│ Express API │────▶│ MongoDB  │
-└────────┘     └────┬───────┘     └──────────┘
-                     │   ▲
-        Kafka Topic  │   │ Latest scan + metadata
-                     ▼   │
-                ┌─────────────┐
-                │ Worker (TS) │
-                └────┬────────┘
-                     │ Fetch bytecode + balance
-                     ▼
+┌─────────┐     ┌────────────┐     ┌──────────┐
+│ Frontend│────▶│ Express API │────▶│ MongoDB  │
+└─────────┘     └────┬───────┘     └──────────┘
+                      │   ▲
+         Kafka Topic  │   │ latest scan + metadata
+                      ▼   │
+                 ┌─────────────┐
+                 │ Worker (TS) │─────▶ Redis cache
+                 └────┬────────┘
+                      │ Bytecode + balance
+                      ▼
                  Ethereum RPC
-
-Redis caches bytecode + scan reports for quick lookups.
 ```
 
-## Getting Started
+- **Frontend** – Vite/React SPA with wallet-aware CTA, scan history drawer, and real-time polling via `/scans/:id`.
+- **API** – Validates requests, normalizes addresses, persists contracts, exposes dashboard metrics, and enqueues scan jobs.
+- **Worker** – Consumes Kafka jobs, fetches bytecode/balance from the configured RPC, runs heuristics (`src/services/analysis/bytecodeAnalyzer.ts`), caches results, and updates Mongo/Redis.
 
-### 1. Install dependencies
+---
 
-```bash
-npm install
+## DEMO
+
+### Homepage
+
+![alt text](homepage.jpg)
+
+### BNB Token
+
+![alt text](bnb.jpg)
+
+### USDT
+
+![alt text](usdt.jpg)
+
+## Tech Stack
+
+| Layer    | Technology                                             |
+| -------- | ------------------------------------------------------ |
+| Frontend | React 18, Vite, Tailwind, Radix UI, TanStack Query     |
+| Backend  | Node 22, Express 5, Zod, Pino, MongoDB via Mongoose    |
+| Async    | KafkaJS, worker service (TypeScript)                   |
+| Cache    | Redis                                                  |
+| DevOps   | Docker, docker-compose, Kubernetes manifests (k8s/)    |
+| Tooling  | TypeScript, SWC, Vitest, ESLint/Prettier (via scripts) |
+
+---
+
+## Repo Layout
+
+```
+.
+├── backend/                # API + worker source (TypeScript)
+├── frontend/               # Vite SPA
+├── k8s/                    # Kubernetes manifests
+├── docker-compose.yml      # Full development stack
+├── Dockerfile              # Backend image
+├── frontend/Dockerfile     # Frontend image
+└── README.md
 ```
 
-### 2. Configure environment
+> Legacy paths (`src/`) are re-exported through `backend/` for clarity. Adjust imports accordingly.
 
-Copy `.env.example` to `.env` and update at least `RPC_URL` (Infura/Alchemy/etc.).
+---
 
-```bash
-cp .env.example .env
-```
+## Prerequisites
 
-### 3. Run services locally
+- Node.js 22.x (API/worker) and pnpm 10.x (frontend)
+- Docker Desktop (Compose v2) if running containers
+- Access to an Ethereum RPC endpoint (Infura, Alchemy, local geth, etc.)
+- Kafka, MongoDB, and Redis when running without Docker (Compose provides managed instances)
 
-```bash
-# Terminal 1 - API
-npm run dev
+---
 
-# Terminal 2 - Worker
-npm run worker
-```
+## Configuration
 
-The API exposes `http://localhost:3000`. The worker must run alongside the API to process Kafka jobs.
+Create `.env` in the repo root (or export variables) with at least:
 
-> **Note**: MongoDB, Redis, and Kafka must be available. For local development use the Compose stack below.
+| Variable            | Description                              | Default                         |
+| ------------------- | ---------------------------------------- | ------------------------------- |
+| `PORT`              | API port                                 | `3000`                          |
+| `RPC_URL`           | Ethereum RPC endpoint                    | _required_                      |
+| `MONGO_URI`         | MongoDB connection string                | `mongodb://localhost:27017/...` |
+| `REDIS_URL`         | Redis connection string                  | `redis://localhost:6379`        |
+| `KAFKA_BROKERS`     | Comma-separated broker list              | `localhost:9092`                |
+| `KAFKA_TOPIC`       | Kafka topic for scan jobs                | `contract-scan-requests`        |
+| `KAFKA_CLIENT_ID`   | Kafka client identifier for each service | `web3-security-service`         |
+| `CACHE_TTL_SECONDS` | Cache duration for scan reports (Redis)  | `600`                           |
 
-## Docker Compose Stack
+Frontend overrides:
 
-The repository includes a full development stack with MongoDB, Redis, Kafka, the API, and the worker.
+| Variable            | Location              | Purpose                                    |
+| ------------------- | --------------------- | ------------------------------------------ |
+| `BACKEND_URL`       | `frontend/Dockerfile` | Development proxy target inside container  |
+| `VITE_API_BASE_URL` | Frontend runtime      | Override `/api` base path when not proxied |
+
+---
+
+## Running Locally
+
+1. **Install backend deps**
+
+   ```bash
+   npm install
+   ```
+
+2. **Install frontend deps**
+
+   ```bash
+   cd frontend
+   pnpm install
+   ```
+
+3. **Start backing services** (Mongo/Redis/Kafka). Use Docker (recommended) or local installs.
+
+4. **Run the API**
+
+   ```bash
+   npm run dev
+   ```
+
+5. **Run the worker in another terminal**
+
+   ```bash
+   npm run worker
+   ```
+
+6. **Run the frontend**
+   ```bash
+   cd frontend
+   BACKEND_URL=http://localhost:3000 pnpm dev
+   ```
+
+Visit `http://localhost:8080`, connect a wallet (MetaMask), enter a contract address, and watch the analysis pipeline complete and populate history.
+
+---
+
+## Running with Docker
+
+The Compose stack launches every dependency, including the frontend proxy:
 
 ```bash
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:3000`. Override `RPC_URL` by exporting the variable before running compose.
+Services:
 
-## Kubernetes Deployment
+| Service  | Port  | Notes                                           |
+| -------- | ----- | ----------------------------------------------- |
+| frontend | 8080  | Vite dev server + Express proxy (`BACKEND_URL`) |
+| api      | 3000  | REST API                                        |
+| worker   | —     | Kafka consumer (logs only)                      |
+| mongo    | 27017 | MongoDB                                         |
+| redis    | 6379  | Redis                                           |
+| kafka    | 9092  | Kafka (with Zookeeper sidecar)                  |
 
-Kubernetes manifests live in `k8s/`. Build and load the application image (`web3-security:latest`) into your cluster (kind, k3d, etc.). Then apply the manifests:
+> `kafka` is exposed internally via the hostname `kafka`. Ensure Docker is running with sufficient permissions before calling `docker compose`.
 
-```bash
-kubectl apply -f k8s/configmap.yaml \
-  -f k8s/mongo-statefulset.yaml \
-  -f k8s/redis-deployment.yaml \
-  -f k8s/kafka-statefulset.yaml \
-  -f k8s/api-deployment.yaml \
-  -f k8s/api-service.yaml \
-  -f k8s/worker-deployment.yaml
-```
+---
 
-Adjust `RPC_URL` and broker URIs in `k8s/configmap.yaml` for your environment. For production, replace the single-node Kafka/DB resources with managed services or Helm charts.
+## Frontend Workflow
 
-## API Endpoints
+- `/client/pages/Index.tsx` orchestrates wallet connection, submission, and polling using helpers from `client/lib/api.ts`.
+- Contract submissions call `POST /contracts`, which enqueues a scan; the UI polls `GET /scans/:id` until the status becomes `succeeded` or `failed`.
+- History drawer fetches `GET /contracts?limit=50` to render previous analyses from MongoDB.
+- Vite config proxies `/api` to the backend in dev; for production builds, `frontend/server/node-build.ts` serves the SPA and forwards `/api` to the actual API URL.
 
-- `GET /health` – Service status.
-- `GET /contracts` – List contracts with optional `riskLevel`/`network` filters.
-- `POST /contracts` – Register a contract (optionally enqueue an immediate scan).
-- `GET /contracts/:address` – Fetch contract details and latest scan.
-- `GET /contracts/:address/scans` – Full scan history for a contract.
-- `POST /contracts/:address/scan` – Enqueue a new scan job (accepts optional ABI).
-- `GET /scans` – Paginated scans (`status` filter supported).
-- `GET /scans/:scanId` – Retrieve a specific scan report.
-- `GET /dashboard/stats` – Aggregated metrics (totals, distribution, averages).
-- `GET /chain/block` – Current block number from the configured RPC.
-- `GET /chain/contracts/:address` – Live on-chain balance + bytecode snapshot.
+---
 
-Refer to `src/routes` for request/response schema details.
+## API Overview
 
-## Development Notes
+| Endpoint                    | Method | Description                                                 |
+| --------------------------- | ------ | ----------------------------------------------------------- |
+| `/health`                   | GET    | Service status                                              |
+| `/contracts`                | GET    | List contracts (filters: `riskLevel`, `network`, paging)    |
+| `/contracts`                | POST   | Register contract & optionally enqueue scan (`enqueueScan`) |
+| `/contracts/:address`       | GET    | Fetch contract + latest scan                                |
+| `/contracts/:address/scans` | GET    | Contract scan history                                       |
+| `/contracts/:address/scan`  | POST   | Enqueue a scan via path param                               |
+| `/scans`                    | GET    | Paginated scan listing (filter by `status`)                 |
+| `/scans/:scanId`            | GET    | Fetch a single scan / cached report                         |
+| `/dashboard/stats`          | GET    | Aggregated metrics                                          |
+| `/chain/block`              | GET    | Latest block from RPC                                       |
+| `/chain/contracts/:address` | GET    | Live on-chain balance/bytecode snapshot                     |
 
-- Kafka topic name defaults to `contract-scan-requests`. Update through env if required.
-- Bytecode analysis heuristics live in `src/services/analysis/bytecodeAnalyzer.ts` – extend this file to add additional detections.
-- Redis caches opcode results for faster subsequent fetches; adjust `CACHE_TTL_SECONDS` if you need different caching behavior.
-- Graceful shutdown hooks ensure Mongo, Redis, and Kafka connections close cleanly.
+Payloads and schemas live under `backend/routes/**` with Zod validation.
 
-## Next Steps & Ideas
+---
 
-1. Extend opcode heuristics with formal verification or symbolic execution results.
-2. Add a frontend dashboard (Next.js/Svelte) that consumes the REST API.
-3. Emit metrics to Prometheus/Grafana for ongoing observability.
-4. Integrate signature lookups (4byte.directory) to enrich function selector analysis when ABI is missing.
+## Testing & Quality
+
+| Command                           | Scope               |
+| --------------------------------- | ------------------- |
+| `npm run test`                    | Backend tests       |
+| `npm run build` / `npm run start` | Production build    |
+| `cd frontend && pnpm test`        | Vitest suite        |
+| `cd frontend && pnpm typecheck`   | TS type checking    |
+| `cd frontend && pnpm format.fix`  | Prettier formatting |
+
+CI/CD is not bundled, but the repo is structured for quick integration with GitHub Actions/GitLab CI.
+
+---
+
+## Troubleshooting
+
+| Symptom                                            | Fix                                                                                                                        |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `KafkaJSNumberOfRetriesExceeded`                   | Ensure Docker is running; confirm `kafka` container is healthy and accessible via hostname `kafka` on the Compose network. |
+| Frontend shows “Analysis failed – route not found” | Verify frontend proxy is pointing to the API (`BACKEND_URL`/`VITE_API_BASE_URL`). Restart Vite after editing `.env`.       |
+| Wallet connect button disabled                     | Ensure MetaMask (or equivalent) injects `window.ethereum`. For local demos you can stub addresses in `useWalletAuth`.      |
+| Mongo `metadata` conflict                          | Already patched – ensure backend image is rebuilt so `$set` vs `$setOnInsert` logic is updated.                            |
+| Compose cannot connect to Docker socket            | Run Docker Desktop with sufficient permissions or execute commands with elevated privileges.                               |
+
+---
+
+## Roadmap Ideas
+
+1. **Advanced heuristics** – Integrate symbolic execution or external scanners for deeper analysis.
+2. **Notification layer** – Webhooks or email alerts when high-risk scans complete.
+3. **Metrics/observability** – Prometheus + Grafana dashboards for queue depth, scan latency, error budgets.
+4. **Role-based access** – Multi-user auth for restricting dashboard visibility/actions.
+5. **Signature enrichment** – Integrate 4byte.directory or Sourcify to enhance ABI insights.
+
+---
+
+## License
+
+This project is distributed under the MIT License. Review `LICENSE` (add if missing) before distributing builds.
+
+---
+
+Need help or stuck on a deployment? Open an issue with logs, environment details, and reproduction steps—we’re happy to assist. Happy auditing! 🛡️
