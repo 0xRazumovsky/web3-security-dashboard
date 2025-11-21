@@ -1,5 +1,12 @@
 # Web3 Security Platform
 
+[![TypeScript](https://img.shields.io/badge/Typescript-blue)]()
+[![Express.js](https://img.shields.io/badge/Express.js-green)]()
+[![Kafka](https://img.shields.io/badge/Kafka-grey)]()
+[![MongoDB](https://img.shields.io/badge/MongoDB-orange)]()
+[![Docker](https://img.shields.io/badge/Docker-blue)]()
+[![Frontend](https://img.shields.io/badge/Frontend-yellow)]()
+
 An end‑to‑end smart‑contract security platform that ingests contract addresses, analyzes EVM bytecode, and surfaces actionable risk insights through a React dashboard. The stack combines an Express API, a Kafka‑driven worker, MongoDB/Redis persistence, and a Vite SPA so analysts can submit, track, and review contract scans in real time.
 
 ---
